@@ -1,0 +1,94 @@
+spring:
+  application:
+    name: hello-kafka
+  
+  # PostgreSQL 데이터베이스 설정
+  datasource:
+    url: jdbc:postgresql://localhost:5432/hello_kafka
+    username: ${db_username}
+    password: ${db_password}
+    driver-class-name: org.postgresql.Driver
+  
+  # JPA 설정
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+  
+  # Kafka 설정
+  kafka:
+    bootstrap-servers: localhost:9092
+    
+    # Producer 설정
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      acks: 1
+      retries: 3
+      batch-size: 16384
+      linger-ms: 1
+      buffer-memory: 33554432
+    
+    # Consumer 설정
+    consumer:
+      group-id: hello-kafka-group
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      auto-offset-reset: earliest
+      enable-auto-commit: true
+      auto-commit-interval: 1000ms
+      properties:
+        spring.json.trusted.packages: "com.ioob.hellokafka.model"
+        spring.json.use.type.info.headers: false
+        spring.json.value.default.type: "com.ioob.hellokafka.model.OrderEvent"
+
+# 로그 레벨 설정
+logging:
+  level:
+    com.ioob.hellokafka: INFO
+    org.springframework.kafka: INFO
+    org.apache.kafka: WARN
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
+
+# 서버 포트 설정
+server:
+  port: 9080
+
+# Spring Boot Actuator 설정
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus,kafka
+      base-path: /actuator
+  endpoint:
+    health:
+      show-details: always
+      show-components: always
+    metrics:
+      enabled: true
+  health:
+    kafka:
+      enabled: true
+  info:
+    env:
+      enabled: true
+    git:
+      mode: full
+    build:
+      enabled: true
+
+# 애플리케이션 정보
+info:
+  app:
+    name: "@project.name@"
+    description: "Kafka 학습용 Spring Boot 애플리케이션"
+    version: "@project.version@"
+    encoding: "@project.build.sourceEncoding@"
+    java:
+      version: "@java.version@"

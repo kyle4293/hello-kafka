@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🍕 음식 주문 & 실시간 알림 시스템</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        .panel {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .notification {
+            padding: 12px;
+            margin: 8px 0;
+            border-radius: 8px;
+            border-left: 4px solid;
+            animation: slideIn 0.3s ease;
+        }
+        .notification.high { border-left-color: #ff4757; background: #ffe8ea; }
+        .notification.normal { border-left-color: #3742fa; background: #e8eaff; }
+        .notification.low { border-left-color: #2ed573; background: #e8ffe9; }
+        
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        
+        button {
+            background: #3742fa;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 8px 4px;
+        }
+        button:hover { background: #2f3542; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
+        
+        .status {
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: bold;
+        }
+        .status.connected { background: #2ed573; color: white; }
+        .status.disconnected { background: #ff4757; color: white; }
+        
+        .order-item {
+            background: #f8f9fa;
+            padding: 12px;
+            margin: 8px 0;
+            border-radius: 8px;
+            border: 1px solid #e9ecef;
+        }
+        
+        h1, h2 { color: #2f3542; }
+        .unread-count {
+            background: #ff4757;
+            color: white;
+            border-radius: 50%;
+            padding: 4px 8px;
+            font-size: 12px;
+            margin-left: 8px;
+        }
+    </style>
+</head>
+<body>
+    <h1>🍕 음식 주문 & 실시간 알림 시스템</h1>
+    
+    <div class="container">
+        <!-- 주문 패널 -->
+        <div class="panel">
+            <h2>음식 주문</h2>
+            
+            <div class="order-item">
+                <h3>맛있는 치킨집 🍗</h3>
+                <p>• 양념치킨 x1 (18,000원)</p>
+                <p>• 콜라 x2 (4,000원)</p>
+                <p><strong>총 금액: 22,000원</strong></p>
+            </div>
+            
+            <button onclick="createOrder()">주문하기 🛒</button>
+            <button onclick="sendTestNotification()">테스트 알림 📢</button>
+            
+            <div style="margin-top: 20px;">
+                <h3>주문 상태 변경 (시뮬레이션)</h3>
+                <input type="text" id="orderIdInput" placeholder="주문 ID 입력" style="padding: 8px; margin: 4px;">
+                <br>
+                <button onclick="updateStatus('COOKING_STARTED')">조리 시작 👨‍🍳</button>
+                <button onclick="updateStatus('COOKING_COMPLETED')">조리 완료 ✨</button>
+                <button onclick="updateStatus('PICKUP_COMPLETED')">픽업 완료 🏃‍♂️</button>
+                <button onclick="updateStatus('DELIVERY_STARTED')">배달 시작 🚗</button>
+                <button onclick="updateStatus('DELIVERY_COMPLETED')">배달 완료 🎉</button>
+            </div>
+        </div>
+        
+        <!-- 알림 패널 -->
+        <div class="panel">
+            <h2>
+                실시간 알림 
+                <span id="connectionStatus" class="status disconnected">연결 안됨</span>
+                <span id="unreadCount" class="unread-count" style="display: none;">0</span>
+            </h2>
+            
+            <button onclick="connectNotifications()">알림 연결</button>
+            <button onclick="disconnectNotifications()">연결 해제</button>
+            <button onclick="loadNotificationHistory()">알림 내역</button>
+            
+            <div id="notifications" style="margin-top: 20px; max-height: 500px; overflow-y: auto;">
+                <p style="color: #666;">알림 연결 후 실시간 알림을 받을 수 있습니다.</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let eventSource = null;
+        let userId = 'USER001';
+        let currentOrderId = null;
+        
+        function connectNotifications() {
+            if (eventSource) {
+                eventSource.close();
+            }
+            
+            console.log('알림 서비스 연결 중...');
+            eventSource = new EventSource(`/api/notifications/stream?userId=${userId}`);
+            
+            eventSource.addEventListener('connected', function(event) {
+                const data = JSON.parse(event.data);
+                console.log('연결 성공:', data);
+                updateConnectionStatus(true);
+                addNotification('시스템', data.message, 'normal', new Date());
+            });
+            
+            eventSource.addEventListener('notification', function(event) {
+                const notification = JSON.parse(event.data);
+                console.log('알림 수신:', notification);
+                
+                addNotification(
+                    notification.title,
+                    notification.message,
+                    notification.priority.toLowerCase(),
+                    new Date(notification.timestamp)
+                );
+                
+                updateUnreadCount();
+                
+                // 브라우저 알림 표시 (권한이 있는 경우)
+                if (Notification.permission === 'granted') {
+                    new Notification(notification.title, {
+                        body: notification.message,
+                        icon: '🍕'
+                    });
+                }
+            });
+            
+            eventSource.addEventListener('error', function(event) {
+                console.error('SSE 연결 오류:', event);
+                updateConnectionStatus(false);
+            });
+            
+            eventSource.onerror = function(event) {
+                console.error('EventSource 오류:', event);
+                updateConnectionStatus(false);
+            };
+        }
+        
+        function disconnectNotifications() {
+            if (eventSource) {
+                eventSource.close();
+                eventSource = null;
+                updateConnectionStatus(false);
+                console.log('알림 연결 해제됨');
+            }
+        }
+        
+        function createOrder() {
+            const orderData = {
+                userId: userId,
+                restaurantId: 'REST001',
+                restaurantName: '맛있는 치킨집',
+                items: [
+                    { menuId: 'MENU001', menuName: '양념치킨', quantity: 1, unitPrice: 18000 },
+                    { menuId: 'MENU002', menuName: '콜라', quantity: 2, unitPrice: 2000 }
+                ],
+                deliveryAddress: '서울시 강남구 테헤란로 123',
+                customerPhone: '010-1234-5678'
+            };
+            
+            fetch('/api/food/order', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(orderData)
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log('주문 성공:', data);
+                currentOrderId = data.orderId;
+                document.getElementById('orderIdInput').value = currentOrderId;
+                alert(`주문이 완료되었습니다! 주문번호: ${data.orderId}`);
+            })
+            .catch(error => {
+                console.error('주문 실패:', error);
+                alert('주문 처리 중 오류가 발생했습니다.');
+            });
+        }
+        
+        function updateStatus(status) {
+            const orderId = document.getElementById('orderIdInput').value || currentOrderId;
+            if (!orderId) {
+                alert('주문 ID를 입력하거나 먼저 주문을 생성하세요.');
+                return;
+            }
+            
+            fetch(`/api/food/order/${orderId}/status?status=${status}&restaurantName=맛있는 치킨집`, {
+                method: 'PUT'
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log('상태 업데이트 성공:', data);
+            })
+            .catch(error => {
+                console.error('상태 업데이트 실패:', error);
+            });
+        }
+        
+        function sendTestNotification() {
+            fetch(`/api/notifications/test?userId=${userId}`, {
+                method: 'POST'
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log('테스트 알림 발송:', data);
+            })
+            .catch(error => {
+                console.error('테스트 알림 실패:', error);
+            });
+        }
+        
+        function loadNotificationHistory() {
+            fetch(`/api/notifications?userId=${userId}`)
+                .then(response => response.json())
+                .then(data => {
+                    console.log('알림 내역:', data);
+                    const container = document.getElementById('notifications');
+                    container.innerHTML = '<h3>알림 내역</h3>';
+                    
+                    data.notifications.forEach(notification => {
+                        addNotification(
+                            notification.title,
+                            notification.message,
+                            notification.priority.toLowerCase(),
+                            new Date(notification.createdAt),
+                            notification.isRead
+                        );
+                    });
+                })
+                .catch(error => {
+                    console.error('알림 내역 로드 실패:', error);
+                });
+        }
+        
+        function addNotification(title, message, priority, timestamp, isRead = false) {
+            const container = document.getElementById('notifications');
+            const notification = document.createElement('div');
+            notification.className = `notification ${priority}`;
+            notification.style.opacity = isRead ? '0.6' : '1';
+            
+            notification.innerHTML = `
+                <div style="display: flex; justify-content: space-between; align-items: start;">
+                    <div>
+                        <strong>${title}</strong>
+                        <p style="margin: 4px 0;">${message}</p>
+                        <small style="color: #666;">${timestamp.toLocaleString()}</small>
+                    </div>
+                    ${isRead ? '<span style="color: #666;">✓</span>' : '<span style="color: #ff4757;">●</span>'}
+                </div>
+            `;
+            
+            container.insertBefore(notification, container.firstChild);
+            
+            // 10개 이상이면 오래된 알림 제거
+            while (container.children.length > 11) { // h3 포함해서 11개
+                container.removeChild(container.lastChild);
+            }
+        }
+        
+        function updateConnectionStatus(connected) {
+            const status = document.getElementById('connectionStatus');
+            if (connected) {
+                status.textContent = '연결됨';
+                status.className = 'status connected';
+            } else {
+                status.textContent = '연결 안됨';
+                status.className = 'status disconnected';
+            }
+        }
+        
+        function updateUnreadCount() {
+            // 실제로는 서버에서 읽지 않은 알림 개수를 받아와야 함
+            const countElement = document.getElementById('unreadCount');
+            countElement.style.display = 'inline';
+            countElement.textContent = '1'; // 임시로 1로 설정
+        }
+        
+        // 페이지 로드시 알림 권한 요청
+        window.addEventListener('load', function() {
+            if ('Notification' in window && Notification.permission === 'default') {
+                Notification.requestPermission();
+            }
+        });
+        
+        // 페이지 종료시 연결 해제
+        window.addEventListener('beforeunload', function() {
+            if (eventSource) {
+                eventSource.close();
+            }
+        });
+    </script>
+</body>
+</html>
